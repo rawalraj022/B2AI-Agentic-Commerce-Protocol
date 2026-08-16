@@ -40,6 +40,7 @@ from .schemas import (
 from .settlement.settlement import settlement_service
 from .supervisor.agent import supervisor as supervisor_agent
 from .wallet.wallet import wallet
+from .memory.agentcore_memory import memory
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 

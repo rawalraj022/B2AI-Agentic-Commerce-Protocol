@@ -23,8 +23,16 @@ class Settings(BaseSettings):
     # --- AI / Agent ---
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
-    agent_provider: str = "openai"  # "openai" | "mock"
+    agent_provider: str = "openai"  # "openai" | "bedrock" | "mock"
     auto_approve: bool = True  # if True, skip human-in-the-loop confirmation (demo)
+    
+    # --- AWS Bedrock (optional) ---
+    bedrock_region: str = "us-east-1"
+    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    
+    # --- Agent Memory ---
+    memory_file_path: str = "./.agent_memory.json"
+    memory_enabled: bool = True
 
     # --- Avalanche Fuji (XSGD settlement) ---
     avalanche_rpc_url: str = ""

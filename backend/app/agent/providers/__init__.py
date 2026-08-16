@@ -1,0 +1,1 @@
+"""Agent intent providers (OpenAI, Bedrock, mock)."""

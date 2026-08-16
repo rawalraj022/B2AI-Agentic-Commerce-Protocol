@@ -70,3 +70,43 @@ export async function listAgents() {
   const { data } = await api.get("/directory/agents");
   return data;
 }
+
+export async function getUserPreferences(userId) {
+  try {
+    const { data } = await api.get(`/memory/${userId}/preferences`);
+    return data.preferences || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+export async function setUserPreference(userId, key, value, confidence = 1.0) {
+  try {
+    const { data } = await api.post(`/memory/${userId}/preference`, null, {
+      params: { key, value, confidence },
+    });
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function getRecentInteractions(userId, limit = 5) {
+  try {
+    const { data } = await api.get(`/memory/${userId}/recent`, {
+      params: { limit },
+    });
+    return data.interactions || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function getDailySpend(userId) {
+  try {
+    const { data } = await api.get(`/memory/${userId}/daily-spend`);
+    return data.daily_spend || 0;
+  } catch (e) {
+    return 0;
+  }
+}

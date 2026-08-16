@@ -11,6 +11,7 @@ Available sub-tools:
   - policy: spend guardrails
   - payment: credential issuance + authorization + settlement
 """
+from datetime import datetime
 from typing import Literal, Optional
 
 from ..agent.agent import agent
@@ -20,6 +21,8 @@ from ..discovery.discovery import discovery
 from ..execution.executor import Executor as _Executor
 from ..issuance.card import credential_service
 from ..mandate.mandate import mandate_service
+from ..memory.agentcore_memory import memory
+from ..memory.schemas import Interaction
 from ..policy.policy_engine import policy_engine
 from ..receipt.receipt import receipt_service
 from ..schemas import Intent, PurchaseRequest, PurchaseResponse, TimelineStep
@@ -108,8 +111,9 @@ class SupervisorAgent:
             data=product.model_dump(),
         ))
 
-        # --- Step 2: Policy guardrails ---
-        decision = policy_engine.authorize(product.merchant, product.price, product.currency)
+        # --- Step 2: Policy guardrails (with daily-spend memory) ---
+        user_id = wallet_address or "default_user"
+        decision = policy_engine.authorize(product.merchant, product.price, product.currency, user_id=user_id)
         if not decision.approved:
             self._add(timeline, TimelineEntry(
                 step="Policy", status="denied",
@@ -201,6 +205,25 @@ class SupervisorAgent:
             detail=f"Receipt generated: {receipt.authorization_id}",
             data=receipt.model_dump(),
         ))
+
+        # Remember this interaction in agent memory
+        try:
+            interaction = Interaction(
+                timestamp=datetime.utcnow(),
+                user_id=user_id,
+                user_message=user_message,
+                intent_product=intent.product,
+                intent_merchant=intent.merchant,
+                intent_amount=product.price,
+                authorization_id=auth.authorization_id,
+                credential_id=credential.credential_id,
+                settlement_tx=settlement.transaction_hash,
+                status="success",
+                detail="Purchase completed successfully",
+            )
+            memory.remember_interaction(user_id, interaction)
+        except Exception:
+            pass  # Silent fail on memory persistence
 
         return {
             "success": True,

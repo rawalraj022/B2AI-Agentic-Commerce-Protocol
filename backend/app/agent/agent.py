@@ -25,6 +25,12 @@ class PaymentAgent:
             except Exception:
                 # Fall back to the rule-based parser on any LLM failure.
                 return self._mock_intent(user_message)
+        elif self.provider == "bedrock":
+            try:
+                return self._bedrock_intent(user_message)
+            except Exception:
+                # Fall back to mock if Bedrock fails
+                return self._mock_intent(user_message)
         return self._mock_intent(user_message)
 
     # --- OpenAI provider ---
@@ -60,6 +66,12 @@ class PaymentAgent:
             max_amount=float(data.get("max_amount", 0)),
             currency=data.get("currency", "XSGD"),
         )
+
+    # --- Bedrock provider ---
+    def _bedrock_intent(self, user_message: str) -> Intent:
+        from .providers.bedrock import BedrockProvider
+        provider = BedrockProvider()
+        return provider.understand_intent(user_message)
 
     # --- Rule-based fallback ---
     def _mock_intent(self, user_message: str) -> Intent:

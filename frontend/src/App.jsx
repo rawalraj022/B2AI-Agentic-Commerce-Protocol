@@ -6,9 +6,82 @@ import {
   getMerchantScore,
   listMerchants,
   listAgents,
+  getRecentInteractions,
+  getDailySpend,
 } from "./services/api.js";
 
 const SAMPLE = "Buy Nike running shoes for $40";
+const DEFAULT_USER_ID = "demo_user";
+const PROVIDERS = ["openai", "bedrock", "mock"];
+
+function ProviderSelector({ provider, onProviderChange }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-medium text-slate-400">Provider:</span>
+      <select
+        value={provider}
+        onChange={(e) => onProviderChange(e.target.value)}
+        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200 focus:border-brand focus:outline-none"
+      >
+        {PROVIDERS.map((p) => (
+          <option key={p} value={p}>
+            {p.charAt(0).toUpperCase() + p.slice(1)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function HistoryPanel({ userId, recentTransactions, dailySpend }) {
+  return (
+    <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-slate-200">Transaction History</h3>
+        <div className="text-sm">
+          <span className="text-slate-500">Today's spend: </span>
+          <span className="font-semibold text-emerald-400">${dailySpend.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {recentTransactions.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-500">No transactions yet. Make your first purchase!</p>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {recentTransactions.map((tx, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/50 p-3 text-sm"
+            >
+              <div className="flex-1">
+                <div className="font-medium text-slate-200">
+                  {tx.intent_product} @ {tx.intent_merchant}
+                </div>
+                <div className="text-xs text-slate-500">
+                  {new Date(tx.timestamp).toLocaleString()}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-semibold text-slate-200">${tx.intent_amount.toFixed(2)}</div>
+                <div
+                  className={`text-xs ${
+                    tx.status === "success"
+                      ? "text-emerald-400"
+                      : tx.status === "denied"
+                        ? "text-rose-400"
+                        : "text-slate-400"
+                  }`}
+                >
+                  {tx.status}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StatusIcon({ status }) {
   if (status === "ok" || status === "success") {
@@ -322,10 +395,23 @@ export default function App() {
   const [useSupervisor, setUseSupervisor] = useState(true);
   const [agentScores, setAgentScores] = useState(null);
   const [isLoadingScores, setIsLoadingScores] = useState(false);
+  const [provider, setProvider] = useState(() => localStorage.getItem("agent_provider") || "openai");
+  const [userId, setUserId] = useState(() => localStorage.getItem("user_id") || DEFAULT_USER_ID);
+  const [recentTransactions, setRecentTransactions] = useState([]);
+  const [dailySpend, setDailySpend] = useState(0);
 
-  // Load directory scores on startup
+  // Persist provider and user ID to localStorage
   useEffect(() => {
-    async function loadScores() {
+    localStorage.setItem("agent_provider", provider);
+  }, [provider]);
+
+  useEffect(() => {
+    localStorage.setItem("user_id", userId);
+  }, [userId]);
+
+  // Load directory scores and user history on startup
+  useEffect(() => {
+    async function loadInitialData() {
       setIsLoadingScores(true);
       try {
         const [merchants, agents] = await Promise.all([listMerchants(), listAgents()]);
@@ -335,14 +421,20 @@ export default function App() {
           ? await import("./services/api.js").then((m) => m.getAgentTrust(nikeAgent.agent_id))
           : null;
         setAgentScores({ merchant: nikeScore, agent: agentTrust });
+
+        // Load user history
+        const recent = await getRecentInteractions(userId, 5);
+        const daily = await getDailySpend(userId);
+        setRecentTransactions(recent);
+        setDailySpend(daily);
       } catch (e) {
         // non-fatal
       } finally {
         setIsLoadingScores(false);
       }
     }
-    loadScores();
-  }, []);
+    loadInitialData();
+  }, [userId]);
 
   async function handleExecute() {
     setLoading(true);
@@ -350,9 +442,17 @@ export default function App() {
     setResult(null);
     try {
       const data = useSupervisor
-        ? await runSupervisorIntent(message)
-        : await runPurchase(message);
+        ? await runSupervisorIntent(message, userId)
+        : await runPurchase(message, userId);
       setResult(data);
+
+      // Reload history after successful purchase
+      if (data.success) {
+        const recent = await getRecentInteractions(userId, 5);
+        const daily = await getDailySpend(userId);
+        setRecentTransactions(recent);
+        setDailySpend(daily);
+      }
     } catch (e) {
       setError(e.response?.data?.detail || e.message || "Request failed");
     } finally {
@@ -360,16 +460,41 @@ export default function App() {
     }
   }
 
+  function handleProviderChange(newProvider) {
+    setProvider(newProvider);
+  }
+
+  function handleUserIdChange(newUserId) {
+    setUserId(newUserId);
+  }
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-800 bg-slate-900/50">
         <div className="mx-auto max-w-4xl px-4 py-6">
-          <h1 className="text-2xl font-bold text-white">
-            B2AI <span className="text-brand">Agentic Commerce</span>
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Policy-controlled settlement layer for AI agents spending self-custodied XSGD
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">
+                B2AI <span className="text-brand">Agentic Commerce</span>
+              </h1>
+              <p className="mt-1 text-sm text-slate-400">
+                Policy-controlled settlement layer for AI agents spending self-custodied XSGD
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 text-right">
+              <ProviderSelector provider={provider} onProviderChange={handleProviderChange} />
+              <div className="text-xs">
+                <span className="text-slate-500">User: </span>
+                <input
+                  type="text"
+                  value={userId}
+                  onChange={(e) => handleUserIdChange(e.target.value)}
+                  className="inline-block w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-200 focus:border-brand focus:outline-none"
+                  placeholder="user_id"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -410,6 +535,9 @@ export default function App() {
             Try: "Buy Nike running shoes for $40" · "Buy AirPods from Apple" · "Buy a Kindle from Amazon"
           </p>
         </div>
+
+        {/* History Panel */}
+        <HistoryPanel userId={userId} recentTransactions={recentTransactions} dailySpend={dailySpend} />
 
         {/* Score panels */}
         <ScorePanel
